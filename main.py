@@ -8,33 +8,39 @@ from playwright.async_api import async_playwright
 app = FastAPI(title="Free Fire Topup API")
 
 async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_code: str, pin_code: str = ""):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-infobars",
-                "--window-size=1280,800",
-            ]
-        )
+    browser = None
+    try:
+        async with async_playwright() as p:
+            # Docker & Low RAM Environment এর জন্য স্পেশাল ব্রাউজার ফ্ল্যাগস
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",  # Docker Memory Fix
+                    "--disable-gpu",            # Docker GPU Fix
+                    "--no-first-run",
+                    "--no-zygote",
+                    "--disable-infobars",
+                    "--window-size=1280,800",
+                ]
+            )
 
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            viewport={'width': 1280, 'height': 800},
-            locale="en-US"
-        )
-        
-        page = await context.new_page()
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                viewport={'width': 1280, 'height': 800},
+                locale="en-US"
+            )
+            
+            page = await context.new_page()
 
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-        """)
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """)
 
-        try:
             await page.goto("https://shop.garena.my/?app=100067&channel=202953", wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
 
@@ -90,6 +96,7 @@ async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_c
                 up_gift_option = page.locator("text=/UP Gift/i").first
                 await up_gift_option.click()
             else:
+                await browser.close()
                 return {"success": False, "reason": "INVALID_PREFIX", "message": "Invalid Voucher Prefix"}
 
             await page.wait_for_timeout(2000)
@@ -145,6 +152,8 @@ async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_c
             full_text = (content + main_content).lower()
             current_url = page.url.lower()
 
+            await browser.close()
+
             if "consumed voucher" in full_text or "consumed%20voucher" in current_url:
                 return {"success": False, "reason": "CONSUMED_VOUCHER", "message": "Voucher is already consumed/used."}
 
@@ -163,11 +172,10 @@ async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_c
             else:
                 return {"success": False, "reason": "FAILED", "message": "Transaction Failed or Invalid Voucher Error."}
 
-        except Exception as e:
-            return {"success": False, "reason": "ERROR", "message": str(e)}
-
-        finally:
+    except Exception as e:
+        if browser:
             await browser.close()
+        return {"success": False, "reason": "ERROR", "message": str(e)}
 
 @app.get("/")
 async def topup_api(
