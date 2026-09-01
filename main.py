@@ -61,8 +61,8 @@ async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_c
                 await close_popup.click()
                 await page.wait_for_timeout(1000)
 
-            # Click "Player ID" option if visible
-            player_id_btn = page.locator("text=/Player ID/i, div:has-text('Player ID'), button:has-text('Player ID')").first
+            # Click "Player ID" option if visible (Fixed Selector)
+            player_id_btn = page.locator("text='Player ID', div:has-text('Player ID'), button:has-text('Player ID')").first
             if await player_id_btn.is_visible(timeout=3000):
                 await player_id_btn.click()
                 await page.wait_for_timeout(1500)
@@ -102,6 +102,126 @@ async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_c
                 await diamond_option.click()
             else:
                 num_loc = page.locator(f"text={num_only}").first
+                if await num_loc.is_visible(timeout=3000):
+                    await num_loc.click()
+
+            await page.wait_for_timeout(1500)
+
+            physical_voucher_tab = page.locator("text='Physical Vouchers'").first
+            if await physical_voucher_tab.is_visible(timeout=5000):
+                await physical_voucher_tab.click()
+                await page.wait_for_timeout(1500)
+
+            if " " in voucher_code or "," in voucher_code:
+                parts = re.split(r'[\s,]+', voucher_code.strip())
+                raw_serial = parts[0]
+                raw_pin = parts[1] if len(parts) > 1 else pin_code
+            else:
+                raw_serial = voucher_code
+                raw_pin = pin_code
+
+            clean_serial = re.sub(r'[^A-Za-z0-9]', '', raw_serial).strip().upper()
+            clean_pin = re.sub(r'[^A-Za-z0-9]', '', raw_pin).strip()
+
+            if clean_serial.startswith("BDMB"):
+                unipin_option = page.locator("text='UniPin'").first
+                if await unipin_option.is_visible(timeout=3000):
+                    await unipin_option.click()
+            elif clean_serial.startswith("UPBD"):
+                up_gift_option = page.locator("text='UP Gift'").first
+                if await up_gift_option.is_visible(timeout=3000):
+                    await up_gift_option.click()
+            else:
+                await browser.close()
+                return {"success": False, "reason": "INVALID_PREFIX", "message": "Invalid Voucher Prefix"}
+
+            await page.wait_for_timeout(2000)
+
+            target_scope = page
+            for frame in page.frames:
+                if "unipin" in frame.url or "unibox" in frame.url:
+                    target_scope = frame
+                    break
+
+            serial_input = target_scope.locator("input[placeholder*='UPBD'], input[placeholder*='Serial'], input[type='text']").first
+            if await serial_input.is_visible(timeout=5000):
+                await serial_input.click()
+                await serial_input.fill(clean_serial)
+                await page.wait_for_timeout(500)
+
+            pin_inputs = target_scope.locator("input[type='password'], input[name*='pin'], input[id*='pin']")
+            pin_count = await pin_inputs.count()
+
+            if pin_count >= 4 and len(clean_pin) >= 12:
+                chunks = [clean_pin[i:i+4] for i in range(0, len(clean_pin), 4)]
+                for idx, chunk in enumerate(chunks[:4]):
+                    inp = pin_inputs.nth(idx)
+                    await inp.click()
+                    await inp.fill(chunk)
+                    await page.wait_for_timeout(100)
+            elif pin_count > 0:
+                await pin_inputs.first.click()
+                if len(clean_pin) == 16:
+                    formatted_pin = "-".join([clean_pin[i:i+4] for i in range(0, 16, 4)])
+                    await pin_inputs.first.fill(formatted_pin)
+                else:
+                    await pin_inputs.first.fill(clean_pin)
+
+            await page.wait_for_timeout(1500)
+
+            confirm_btn = target_scope.locator("input[type='submit'][value='Confirm'], input[value='Confirm']").first
+
+            if await confirm_btn.is_visible(timeout=3000):
+                await confirm_btn.scroll_into_view_if_needed()
+                await confirm_btn.click(force=True)
+            else:
+                await target_scope.evaluate("""
+                    const btn = document.querySelector("input[type='submit'][value='Confirm']") || 
+                                document.querySelector("input[value='Confirm']");
+                    if (btn) btn.click();
+                """)
+
+            await page.wait_for_timeout(7000)
+
+            content = await target_scope.content()
+            main_content = await page.content()
+            full_text = (content + main_content).lower()
+            current_url = page.url.lower()
+
+            await browser.close()
+
+            if "consumed voucher" in full_text or "consumed%20voucher" in current_url:
+                return {"success": False, "reason": "CONSUMED_VOUCHER", "message": "Voucher is already consumed/used."}
+
+            success_keywords = [
+                "transaction successful",
+                "transactions successful",
+                "successful",
+                "transaction success",
+                "transactions success",
+                "success",
+                "completed",
+            ]
+
+            if any(word in full_text for word in success_keywords):
+                return {"success": True, "message": "Topup Completed Successfully!"}
+            else:
+                return {"success": False, "reason": "FAILED", "message": "Transaction Failed or Invalid Voucher Error."}
+
+    except Exception as e:
+        if browser:
+            await browser.close()
+        return {"success": False, "reason": "ERROR", "message": str(e)}
+
+@app.get("/")
+async def topup_api(
+    uid: str = Query(..., description="Player UID"),
+    amount: str = Query(..., description="Diamond Amount"),
+    voucher: str = Query(..., description="Voucher Serial"),
+    pin: str = Query("", description="Voucher PIN Code")
+):
+    result = await process_freefire_topup(player_uid=uid, diamond_amount=amount, voucher_code=voucher, pin_code=pin)
+    return JSONResponse(content=result)                num_loc = page.locator(f"text={num_only}").first
                 if await num_loc.is_visible(timeout=3000):
                     await num_loc.click()
 
