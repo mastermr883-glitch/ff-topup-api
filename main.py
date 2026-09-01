@@ -5,7 +5,6 @@ from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
 from playwright.async_api import async_playwright
 
-# এই লাইনটি থাকা বাধ্যতামূলক (যা Uvicorn খুঁজছিল)
 app = FastAPI(title="Free Fire Topup API")
 
 async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_code: str, pin_code: str = ""):
@@ -178,79 +177,4 @@ async def topup_api(
     pin: str = Query("", description="Voucher PIN Code")
 ):
     result = await process_freefire_topup(player_uid=uid, diamond_amount=amount, voucher_code=voucher, pin_code=pin)
-    return JSONResponse(content=result)            await page.wait_for_timeout(500)
-
-            pin_inputs = target_scope.locator("input[type='password'], input[name*='pin'], input[id*='pin']")
-            pin_count = await pin_inputs.count()
-
-            if pin_count >= 4 and len(clean_pin) >= 12:
-                chunks = [clean_pin[i:i+4] for i in range(0, len(clean_pin), 4)]
-                for idx, chunk in enumerate(chunks[:4]):
-                    inp = pin_inputs.nth(idx)
-                    await inp.click()
-                    await inp.fill(chunk)
-                    await page.wait_for_timeout(100)
-            elif pin_count > 0:
-                await pin_inputs.first.click()
-                if len(clean_pin) == 16:
-                    formatted_pin = "-".join([clean_pin[i:i+4] for i in range(0, 16, 4)])
-                    await pin_inputs.first.fill(formatted_pin)
-                else:
-                    await pin_inputs.first.fill(clean_pin)
-
-            await page.wait_for_timeout(1500)
-
-            confirm_btn = target_scope.locator("input[type='submit'][value='Confirm'], input[value='Confirm']").first
-
-            if await confirm_btn.is_visible(timeout=3000):
-                await confirm_btn.scroll_into_view_if_needed()
-                await confirm_btn.click(force=True)
-            else:
-                await target_scope.evaluate("""
-                    const btn = document.querySelector("input[type='submit'][value='Confirm']") || 
-                                document.querySelector("input[value='Confirm']");
-                    if (btn) btn.click();
-                """)
-
-            await page.wait_for_timeout(7000)
-
-            content = await target_scope.content()
-            main_content = await page.content()
-            full_text = (content + main_content).lower()
-            current_url = page.url.lower()
-
-            if "consumed voucher" in full_text or "consumed%20voucher" in current_url:
-                return json.dumps({"success": False, "reason": "CONSUMED_VOUCHER", "message": "Voucher is already consumed/used."})
-
-            success_keywords = [
-                "transaction successful",
-                "transactions successful",
-                "successful",
-                "transaction success",
-                "transactions success",
-                "success",
-                "completed",
-            ]
-
-            if any(word in full_text for word in success_keywords):
-                return json.dumps({"success": True, "message": "Topup Completed Successfully!"})
-            else:
-                return json.dumps({"success": False, "reason": "FAILED", "message": "Transaction Failed or Invalid Voucher Error."})
-
-        except Exception as e:
-            return json.dumps({"success": False, "reason": "ERROR", "message": str(e)})
-
-        finally:
-            await browser.close()
-
-if __name__ == "__main__":
-    if len(sys.argv) > 4:
-        p_uid, d_amount, v_serial, v_pin = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-        res = asyncio.run(process_freefire_topup(p_uid, d_amount, v_serial, v_pin))
-    elif len(sys.argv) == 4:
-        p_uid, d_amount, v_code = sys.argv[1], sys.argv[2], sys.argv[3]
-        res = asyncio.run(process_freefire_topup(p_uid, d_amount, v_code))
-    else:
-        res = json.dumps({"success": False, "reason": "INVALID_PARAMS", "message": "Missing Arguments"})
-    
-    print(res)
+    return JSONResponse(content=result)
