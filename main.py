@@ -79,20 +79,25 @@ async def process_freefire_topup(player_uid: str, diamond_amount: str, voucher_c
                 return {"success": False, "reason": "UID_INPUT_NOT_FOUND", "message": "Could not find Player ID input box on Garena shop."}
 
             await uid_input.click()
-            await uid_input.fill(str(player_uid))
-            await page.wait_for_timeout(1000)
+            await uid_input.fill("")
+            await uid_input.type(str(player_uid), delay=80)
+            # Dispatch React state input events
+            await uid_input.evaluate("el => el.dispatchEvent(new Event('input', { bubbles: true }))")
+            await uid_input.evaluate("el => el.dispatchEvent(new Event('change', { bubbles: true }))")
+            await page.wait_for_timeout(1500)
 
-            login_btn = page.locator("button:has-text('Login'), div[role='button']:has-text('Login'), .login-btn, button[type='submit']").first
+            login_btn = page.locator("button[type='submit']:has-text('Login'), button:has-text('Login'), .login-btn").first
             if await login_btn.is_visible(timeout=3000):
-                await login_btn.click()
+                await login_btn.click(force=True)
             else:
                 await page.keyboard.press("Enter")
 
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(3500)
 
-            proceed_btn = page.locator("button:has-text('Proceed to Payment'), div[role='button']:has-text('Proceed to Payment'), button:has-text('Login')").first
+            # Proceed button (Fixed: Removed 'Login' from locator)
+            proceed_btn = page.locator("button:has-text('Proceed to Payment'), div[role='button']:has-text('Proceed to Payment'), button:has-text('Proceed')").first
             if await proceed_btn.is_visible(timeout=5000):
-                await proceed_btn.click()
+                await proceed_btn.click(force=True)
                 await page.wait_for_timeout(2000)
 
             num_only = re.sub(r"\D", "", str(diamond_amount))
